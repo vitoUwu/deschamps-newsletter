@@ -1,0 +1,13 @@
+services:
+  newsletter:
+    build: .
+    container_name: newsletter
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - observability
+
+networks:
+  observability:
+    external: true
