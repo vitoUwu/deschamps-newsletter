@@ -7,6 +7,8 @@ services:
     restart: unless-stopped
     networks:
       - observability
+    volumes:
+      - ./db/newsletter.sqlite:/app/db/newsletter.sqlite
 
 networks:
   observability:
