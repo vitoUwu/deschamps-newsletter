@@ -7,4 +7,6 @@ RUN bun install --production
 
 COPY . .
 
+RUN mkdir -p /app/db
+
 CMD ["bun", "run", "start"]
