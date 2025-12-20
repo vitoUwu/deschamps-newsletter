@@ -2,6 +2,7 @@ import { logs } from "@opentelemetry/api-logs";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import {
   BatchLogRecordProcessor,
@@ -37,7 +38,12 @@ logs.setGlobalLoggerProvider(loggerProvider);
 
 const sdk = new NodeSDK({
   resource,
-  traceExporter: new ConsoleSpanExporter(),
+  traceExporter:
+    process.env.OTEL_TRACES_EXPORTER === "otlp"
+      ? new OTLPTraceExporter({
+          url: `${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces`,
+        })
+      : new ConsoleSpanExporter(),
   metricReaders: [
     new PeriodicExportingMetricReader({
       exporter: new OTLPMetricExporter({
