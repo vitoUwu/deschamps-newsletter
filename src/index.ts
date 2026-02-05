@@ -1,12 +1,12 @@
+import { trace } from "@opentelemetry/api";
+import type { AnyValue } from "@opentelemetry/api-logs";
 import { Cron } from "croner";
 import db from "../db/db";
 import discord from "./discord";
 import { withRetry } from "./lib/with-retry";
+import logger from "./observability/logger";
 import tabnews from "./tabnews";
 import StringUtils from "./utils/string";
-import { trace } from "@opentelemetry/api";
-import logger from "./observability/logger";
-import type { AnyValue } from "@opentelemetry/api-logs";
 
 const NEWSLETTER_USERNAME = "NewsletterOficial";
 
@@ -39,7 +39,9 @@ const cron = new Cron("*/5 * * * *", async () => {
       // Should I add the contents to the span?
       span.setAttribute("newsletter.contents", JSON.stringify(contents));
 
-      const content = contents[0];
+      // This filter is used to avoid the app to publish a content that is a comment of another content.
+      // As the strategy is "new", the first content is the most recent one.
+      const content = contents.find((content) => !content.parent_id);
 
       if (!content) {
         return;
