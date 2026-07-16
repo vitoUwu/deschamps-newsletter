@@ -10,11 +10,15 @@ import StringUtils from "./utils/string";
 
 const NEWSLETTER_USERNAME = "NewsletterOficial";
 
-const getUserContents = withRetry(tabnews.routes.getUserContents, {
+const retryOptions = {
   retries: 3,
   delay: 1000,
   approach: "exponential",
-});
+} as const;
+
+const getUserContents = withRetry(tabnews.routes.getUserContents, retryOptions);
+const getUserContent = withRetry(tabnews.routes.getUserContent, retryOptions);
+const sendMessage = withRetry(discord.webhook.sendMessage, retryOptions);
 
 logger.info("Starting content searcher job...");
 
@@ -28,53 +32,57 @@ const cron = new Cron("*/5 * * * *", async () => {
 
       span.setAttribute("newsletter.username", NEWSLETTER_USERNAME);
       span.setAttribute("newsletter.strategy", "new");
-      span.setAttribute("newsletter.perPage", 1);
+      span.setAttribute("newsletter.perPage", 10);
 
       const contents = await getUserContents({
         username: NEWSLETTER_USERNAME,
         strategy: "new",
-        perPage: 1,
+        perPage: 10,
       });
 
       // Should I add the contents to the span?
       span.setAttribute("newsletter.contents", JSON.stringify(contents));
 
-      // This filter is used to avoid the app to publish a content that is a comment of another content.
-      // As the strategy is "new", the first content is the most recent one.
-      const content = contents.find((content) => !content.parent_id);
+      // Filter out comments (they have a parent_id) so we only publish posts.
+      // The API returns contents newest-first, so we reverse to publish oldest-first.
+      const posts = contents.filter((content) => !content.parent_id);
 
-      if (!content) {
-        return;
+      const unsentPosts = [];
+      for (const post of posts) {
+        const exists = await db.contentExists(post.id);
+        if (!exists) {
+          unsentPosts.push(post);
+        }
       }
+      unsentPosts.reverse();
 
-      const exists = await db.contentExists(content.id);
-      span.setAttribute("newsletter.exists", exists);
-      if (exists) {
-        return;
+      span.setAttribute("newsletter.unsent_count", unsentPosts.length);
+
+      for (const content of unsentPosts) {
+        const details = await getUserContent(NEWSLETTER_USERNAME, content.slug);
+        span.setAttribute("newsletter.details", JSON.stringify(details));
+
+        const chunks = StringUtils.sliced(details.body, 3600);
+        span.setAttribute("newsletter.chunks_count", chunks.length);
+
+        // Each chunk must be sent as its own message, since Components V2
+        // caps total text at 4000 chars. Send sequentially to preserve order.
+        for (let index = 0; index < chunks.length; index++) {
+          await sendMessage({
+            components: [
+              discord.components.createNewsletterComponent({
+                body: chunks[index]!,
+                slug: content.slug,
+                username: NEWSLETTER_USERNAME,
+                includeGoToTabnewsButton: index === chunks.length - 1,
+                includeThumbnail: index === 0,
+              }),
+            ],
+          });
+        }
+
+        await db.addSentContent(content.id);
       }
-
-      const details = await tabnews.routes.getUserContent(
-        NEWSLETTER_USERNAME,
-        content.slug
-      );
-      span.setAttribute("newsletter.details", JSON.stringify(details));
-
-      const chunks = StringUtils.sliced(details.body, 3600);
-      span.setAttribute("newsletter.chunks_count", chunks.length);
-
-      await discord.webhook.sendMessage({
-        components: chunks.map((chunk, index) =>
-          discord.components.createNewsletterComponent({
-            body: chunk,
-            slug: content.slug,
-            username: NEWSLETTER_USERNAME,
-            includeGoToTabnewsButton: index === chunks.length - 1,
-            includeThumbnail: index === 0,
-          })
-        ),
-      });
-
-      await db.addSentContent(content.id);
     } catch (error) {
       if (error instanceof Error) {
         span.recordException(error);
