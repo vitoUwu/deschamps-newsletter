@@ -7,6 +7,20 @@ import { createFetchClient } from "../lib/api";
 
 const WEBHOOK_ID = Bun.env.WEBHOOK_ID;
 const WEBHOOK_TOKEN = Bun.env.WEBHOOK_TOKEN;
+
+const missingEnvVars = [
+  ["WEBHOOK_ID", WEBHOOK_ID],
+  ["WEBHOOK_TOKEN", WEBHOOK_TOKEN],
+]
+  .filter(([, value]) => !value)
+  .map(([name]) => name);
+
+if (missingEnvVars.length) {
+  throw new Error(
+    `Missing required environment variable(s): ${missingEnvVars.join(", ")}`
+  );
+}
+
 const BASE_URL = "https://discord.com/api";
 
 const client = createFetchClient(BASE_URL);
