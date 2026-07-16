@@ -18,7 +18,7 @@ export function withRetry<TFunction extends (...args: any[]) => any>(
     if (approach === "exponential") {
       return delay * Math.pow(2, attempt);
     }
-    return delay * attempt;
+    return delay * (attempt + 1);
   };
 
   return async (
@@ -31,7 +31,9 @@ export function withRetry<TFunction extends (...args: any[]) => any>(
         return result;
       } catch (error) {
         lastError = error as Error;
-        await new Promise((resolve) => setTimeout(resolve, getDelay(i)));
+        if (i < retries - 1) {
+          await new Promise((resolve) => setTimeout(resolve, getDelay(i)));
+        }
       }
     }
     throw lastError;
